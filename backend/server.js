@@ -1,14 +1,13 @@
 const express = require('express');
-const http = require('http');
+const http    = require('http');
 const { Server } = require('socket.io');
-const cors = require('cors');
+const cors   = require('cors');
 const helmet = require('helmet');
 const { stations, routes, routeWaypoints, buses: initialBuses } = require('./data/initialData');
 
-const app = express();
+const app    = express();
 const server = http.createServer(app);
 
-// Allow the Vercel frontend + localhost in dev
 const ALLOWED_ORIGINS = process.env.ALLOWED_ORIGINS
   ? process.env.ALLOWED_ORIGINS.split(',').map(o => o.trim())
   : ['http://localhost:5173', 'http://localhost:4173'];
@@ -21,71 +20,46 @@ app.use(helmet());
 app.use(cors({ origin: ALLOWED_ORIGINS }));
 app.use(express.json());
 
-// Shared mutable state
+// ── Shared state ──────────────────────────────────────────────
 const state = {
-  stations: JSON.parse(JSON.stringify(stations)),
-  routes: JSON.parse(JSON.stringify(routes)),
+  stations:      JSON.parse(JSON.stringify(stations)),
+  routes:        JSON.parse(JSON.stringify(routes)),
   routeWaypoints,
-  buses: JSON.parse(JSON.stringify(initialBuses)),
+  buses:         JSON.parse(JSON.stringify(initialBuses)),
 };
 
-// Initialise bus positions from first waypoint
+// Buses start with no position — offline until GPS data arrives
 state.buses.forEach(bus => {
-  const wps = routeWaypoints[bus.routeId] || [];
-  if (wps.length) {
-    bus.lat = wps[bus.waypointIndex][0];
-    bus.lng = wps[bus.waypointIndex][1];
-  }
-  bus.lastUpdate = new Date().toISOString();
-  bus.passengers = Math.floor(Math.random() * bus.capacity);
+  bus.lat        = null;
+  bus.lng        = null;
+  bus.speed      = 0;
+  bus.heading    = 0;
+  bus.satellites = 0;
+  bus.hdop       = 99.9;
+  bus.hasFix     = false;
+  bus.outOfArea  = false;
+  bus.gpsSource  = null;
+  bus.lastUpdate = null;
+  bus.passengers = 0;
+  bus.status     = 'offline';
 });
 
-// ── REST routes ───────────────────────────────────────────────
-app.use('/api/buses',    require('./routes/buses')(state));
-app.use('/api/routes',   require('./routes/routes')(state));
-app.use('/api/stations', require('./routes/stations')(state));
+// ── Dar es Salaam geographic bounds ──────────────────────────
+const DAR_BOUNDS = {
+  north: -6.50,
+  south: -7.10,
+  east:  39.55,
+  west:  38.90,
+};
 
-// GPS ingest endpoint – ESP32 + NEO-6M hardware
-app.post('/api/gps', (req, res) => {
-  const { busId, latitude, longitude, speed, timestamp,
-          satellites, hdop, hasFix } = req.body;
+function isInDarBounds(lat, lng) {
+  return (
+    lat >= DAR_BOUNDS.south && lat <= DAR_BOUNDS.north &&
+    lng >= DAR_BOUNDS.west  && lng <= DAR_BOUNDS.east
+  );
+}
 
-  if (!busId) return res.status(400).json({ error: 'busId is required' });
-
-  const bus = state.buses.find(b => b.id === busId);
-  if (!bus) {
-    return res.status(404).json({
-      error: `Bus '${busId}' not found`,
-      validIds: state.buses.map(b => b.id),
-    });
-  }
-
-  const lat = parseFloat(latitude);
-  const lng = parseFloat(longitude);
-  if (isNaN(lat) || isNaN(lng)) {
-    return res.status(400).json({ error: 'latitude and longitude must be valid numbers' });
-  }
-
-  // Real hardware overrides the simulation
-  bus.lat        = lat;
-  bus.lng        = lng;
-  bus.speed      = parseFloat(speed) || bus.speed;
-  bus.lastUpdate = timestamp || new Date().toISOString();
-  bus.gpsSource  = 'hardware';   // dashboard shows "Live GPS" badge
-  bus.satellites = satellites != null ? parseInt(satellites) : bus.satellites;
-  bus.hdop       = hdop       != null ? parseFloat(hdop)     : bus.hdop;
-  bus.hasFix     = hasFix     != null ? hasFix               : true;
-
-  const payload = buildBusPayload(bus);
-  io.emit('busesUpdate', state.buses.map(buildBusPayload));
-
-  console.log(`[GPS HW] ${busId} → ${lat.toFixed(5)}, ${lng.toFixed(5)} | ${(bus.speed).toFixed(1)} km/h | sats:${bus.satellites} hdop:${bus.hdop} fix:${bus.hasFix}`);
-  res.json({ ok: true, bus: payload });
-});
-
-app.get('/api/health', (_req, res) => res.json({ status: 'ok', time: new Date().toISOString() }));
-
-// ── Simulation helpers ────────────────────────────────────────
+// ── Helpers ───────────────────────────────────────────────────
 function haversineKm(lat1, lon1, lat2, lon2) {
   const R = 6371;
   const dLat = ((lat2 - lat1) * Math.PI) / 180;
@@ -99,71 +73,45 @@ function haversineKm(lat1, lon1, lat2, lon2) {
 }
 
 function getNextStation(bus) {
+  if (bus.lat == null || bus.lng == null) return null;
   const route = state.routes.find(r => r.id === bus.routeId);
   if (!route) return null;
-  const stationIds = route.stationIds;
-  // Find the closest upcoming station based on waypoint progress
-  const wps = routeWaypoints[bus.routeId] || [];
-  if (!wps.length) return null;
-  const currentWp = wps[bus.waypointIndex] || wps[0];
   let minDist = Infinity;
-  let nextSt = null;
-  for (const stId of stationIds) {
+  let nextSt  = null;
+  for (const stId of route.stationIds) {
     const st = state.stations.find(s => s.id === stId);
     if (!st) continue;
-    const d = haversineKm(currentWp[0], currentWp[1], st.lat, st.lng);
+    const d = haversineKm(bus.lat, bus.lng, st.lat, st.lng);
     if (d < minDist && d > 0.05) { minDist = d; nextSt = st; }
   }
-  return { station: nextSt, distKm: minDist };
+  return nextSt ? { station: nextSt, distKm: minDist } : null;
 }
 
 function buildBusPayload(bus) {
-  const next = getNextStation(bus);
-  const etaMin = next ? Math.round((next.distKm / Math.max(bus.speed, 1)) * 60) : null;
+  const next  = getNextStation(bus);
+  const eta   = next ? Math.round((next.distKm / Math.max(bus.speed || 1, 1)) * 60) : null;
   const route = state.routes.find(r => r.id === bus.routeId);
   return {
     ...bus,
-    routeName: route ? route.name : 'Unknown',
-    routeShort: route ? route.shortName : '',
-    routeColor: route ? route.color : '#888',
-    nextStation: next?.station?.name || 'Terminal',
-    etaMinutes: etaMin,
-    lastUpdate: bus.lastUpdate,
+    routeName:   route?.name      || 'Unknown',
+    routeShort:  route?.shortName || '',
+    routeColor:  route?.color     || '#888',
+    nextStation: next?.station?.name || null,
+    etaMinutes:  eta,
   };
 }
 
-// ── GPS Simulation loop (every 5 s) ──────────────────────────
-function simulateBuses() {
-  const busPayloads = [];
+// ── Broadcast helpers ─────────────────────────────────────────
+function broadcastAll() {
+  io.emit('busesUpdate', state.buses.map(buildBusPayload));
+  broadcastStationArrivals();
+}
 
+function broadcastStationArrivals() {
+  const arrivals = {};
+  state.stations.forEach(st => { arrivals[st.id] = []; });
   state.buses.forEach(bus => {
-    if (bus.status !== 'active') return;
-    const wps = routeWaypoints[bus.routeId];
-    if (!wps || wps.length < 2) return;
-
-    // Advance waypoint index
-    bus.waypointIndex += bus.direction;
-    if (bus.waypointIndex >= wps.length) { bus.waypointIndex = wps.length - 2; bus.direction = -1; }
-    if (bus.waypointIndex < 0)           { bus.waypointIndex = 1;              bus.direction =  1; }
-
-    const wp = wps[bus.waypointIndex];
-    bus.lat = wp[0] + (Math.random() - 0.5) * 0.0003;
-    bus.lng = wp[1] + (Math.random() - 0.5) * 0.0003;
-    bus.speed = Math.max(10, Math.min(65, bus.speed + (Math.random() - 0.5) * 6));
-    bus.passengers = Math.max(0, Math.min(bus.capacity, bus.passengers + Math.floor((Math.random() - 0.4) * 5)));
-    bus.lastUpdate = new Date().toISOString();
-
-    busPayloads.push(buildBusPayload(bus));
-  });
-
-  // Broadcast all updates in one event
-  io.emit('busesUpdate', busPayloads);
-
-  // Compute incoming buses per station and broadcast
-  const stationArrivals = {};
-  state.stations.forEach(st => { stationArrivals[st.id] = []; });
-  state.buses.forEach(bus => {
-    if (bus.status !== 'active') return;
+    if (bus.status !== 'active' || bus.lat == null) return;
     const route = state.routes.find(r => r.id === bus.routeId);
     if (!route) return;
     route.stationIds.forEach(stId => {
@@ -171,17 +119,99 @@ function simulateBuses() {
       if (!st) return;
       const d = haversineKm(bus.lat, bus.lng, st.lat, st.lng);
       if (d < 3) {
-        const eta = Math.round((d / Math.max(bus.speed, 1)) * 60);
-        stationArrivals[stId].push({ busId: bus.id, routeName: route.name, etaMinutes: eta });
+        const eta = Math.round((d / Math.max(bus.speed || 1, 1)) * 60);
+        arrivals[stId].push({ busId: bus.id, routeName: route.name, etaMinutes: eta });
       }
     });
   });
-  io.emit('stationArrivals', stationArrivals);
+  io.emit('stationArrivals', arrivals);
 }
 
-setInterval(simulateBuses, 5000);
+// ── Stale bus check (every 60 s) ─────────────────────────────
+// Mark a bus offline if it hasn't sent GPS data in 3 minutes
+const STALE_TIMEOUT_MS = 3 * 60 * 1000; // 3 minutes
 
-// ── Auth endpoint (keeps credentials server-side) ────────────
+setInterval(() => {
+  const now = Date.now();
+  let changed = false;
+  state.buses.forEach(bus => {
+    if (bus.status === 'active' && bus.lastUpdate) {
+      const age = now - new Date(bus.lastUpdate).getTime();
+      if (age > STALE_TIMEOUT_MS) {
+        console.log(`[Stale] ${bus.id} offline — last update ${Math.round(age / 1000)}s ago`);
+        bus.status     = 'offline';
+        bus.lat        = null;
+        bus.lng        = null;
+        bus.speed      = 0;
+        bus.gpsSource  = null;
+        bus.outOfArea  = false;
+        changed        = true;
+      }
+    }
+  });
+  if (changed) broadcastAll();
+}, 60_000);
+
+// ── REST routes ───────────────────────────────────────────────
+app.use('/api/buses',    require('./routes/buses')(state));
+app.use('/api/routes',   require('./routes/routes')(state));
+app.use('/api/stations', require('./routes/stations')(state));
+
+// ── GPS ingest — ESP32 + NEO-6M ───────────────────────────────
+app.post('/api/gps', (req, res) => {
+  const { busId, latitude, longitude, speed, heading,
+          timestamp, satellites, hdop, hasFix } = req.body;
+
+  if (!busId) return res.status(400).json({ error: 'busId is required' });
+
+  const bus = state.buses.find(b => b.id === busId);
+  if (!bus) {
+    return res.status(404).json({
+      error: `Bus '${busId}' not registered`,
+      validIds: state.buses.map(b => b.id),
+    });
+  }
+
+  const lat = parseFloat(latitude);
+  const lng = parseFloat(longitude);
+  if (isNaN(lat) || isNaN(lng)) {
+    return res.status(400).json({ error: 'latitude and longitude must be valid numbers' });
+  }
+
+  // Check if coordinates are within Dar es Salaam
+  const inBounds = isInDarBounds(lat, lng);
+
+  bus.lat        = lat;
+  bus.lng        = lng;
+  bus.speed      = parseFloat(speed)      || 0;
+  bus.heading    = parseFloat(heading)    || 0;
+  bus.satellites = parseInt(satellites)   || 0;
+  bus.hdop       = parseFloat(hdop)       || 99.9;
+  bus.hasFix     = hasFix != null ? hasFix : true;
+  bus.lastUpdate = timestamp || new Date().toISOString();
+  bus.gpsSource  = 'hardware';
+  bus.outOfArea  = !inBounds;
+  bus.status     = 'active';  // bus is online whenever it sends data
+
+  if (!inBounds) {
+    console.log(`[GPS] ⚠ ${busId} outside Dar es Salaam: ${lat.toFixed(5)}, ${lng.toFixed(5)}`);
+  } else {
+    console.log(`[GPS] ${busId} → ${lat.toFixed(5)}, ${lng.toFixed(5)} | ${bus.speed.toFixed(1)} km/h | sats:${bus.satellites} | fix:${bus.hasFix}`);
+  }
+
+  broadcastAll();
+  res.json({ ok: true, bus: buildBusPayload(bus), inBounds });
+});
+
+app.get('/api/health', (_req, res) =>
+  res.json({
+    status: 'ok',
+    time: new Date().toISOString(),
+    activeBuses: state.buses.filter(b => b.status === 'active').length,
+  })
+);
+
+// ── Auth endpoint ─────────────────────────────────────────────
 app.post('/api/auth/login', (req, res) => {
   const { username, password } = req.body;
   const validUser = process.env.OPERATOR_USERNAME || 'operator';
@@ -192,14 +222,15 @@ app.post('/api/auth/login', (req, res) => {
   res.status(401).json({ ok: false, message: 'Invalid username or password.' });
 });
 
-// ── WebSocket ────────────────────────────────────────────────
+// ── WebSocket ─────────────────────────────────────────────────
 io.on('connection', (socket) => {
   console.log('Client connected:', socket.id);
-  // Send initial snapshot
+
+  // Send initial snapshot — buses are all offline until GPS arrives
   socket.emit('init', {
-    buses: state.buses.map(buildBusPayload),
-    routes: state.routes,
-    stations: state.stations,
+    buses:     state.buses.map(buildBusPayload),
+    routes:    state.routes,
+    stations:  state.stations,
     waypoints: routeWaypoints,
   });
 
@@ -207,4 +238,6 @@ io.on('connection', (socket) => {
 });
 
 const PORT = process.env.PORT || 3001;
-server.listen(PORT, () => console.log(`Smart DART backend running on port ${PORT}`));
+server.listen(PORT, () =>
+  console.log(`Smart DART backend running on port ${PORT} — waiting for GPS data`)
+);

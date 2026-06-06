@@ -158,19 +158,21 @@ const routeWaypoints = {
 };
 
 // ── Buses ─────────────────────────────────────────────────────
+// All buses start OFFLINE with no position.
+// They become 'active' only when a real ESP32 sends GPS data.
 const buses = [
-  { id: 'DART001', routeId: 'RT1',   status: 'active', capacity: 80, driver: 'John Mwamba',     waypointIndex: 0,  direction: 1,  speed: 38 },
-  { id: 'DART002', routeId: 'RT1',   status: 'active', capacity: 80, driver: 'Grace Ndovu',     waypointIndex: 10, direction: 1,  speed: 42 },
-  { id: 'DART003', routeId: 'RT2',   status: 'active', capacity: 60, driver: 'Peter Msigwa',    waypointIndex: 2,  direction: 1,  speed: 35 },
-  { id: 'DART004', routeId: 'RT4',   status: 'active', capacity: 80, driver: 'Amina Salim',     waypointIndex: 0,  direction: 1,  speed: 40 },
-  { id: 'DART005', routeId: 'RT7',   status: 'active', capacity: 80, driver: 'David Kipchoge',  waypointIndex: 6,  direction: -1, speed: 33 },
-  { id: 'DART006', routeId: 'RT3',   status: 'active', capacity: 60, driver: 'Fatuma Hassan',   waypointIndex: 0,  direction: 1,  speed: 36 },
-  { id: 'DART007', routeId: 'RT5',   status: 'active', capacity: 60, driver: 'Emmanuel Osei',   waypointIndex: 3,  direction: 1,  speed: 41 },
-  { id: 'DART008', routeId: 'RT6',   status: 'active', capacity: 60, driver: 'Rose Mkwawa',     waypointIndex: 1,  direction: 1,  speed: 37 },
-  { id: 'DART009', routeId: 'RT10',  status: 'active', capacity: 40, driver: 'Ibrahim Juma',    waypointIndex: 0,  direction: 1,  speed: 28 },
-  { id: 'DART010', routeId: 'RT1X',  status: 'active', capacity: 80, driver: 'Zawadi Mushi',    waypointIndex: 0,  direction: 1,  speed: 55 },
-  { id: 'DART011', routeId: 'RT_P2', status: 'active', capacity: 80, driver: 'Hassan Kombo',    waypointIndex: 0,  direction: 1,  speed: 45 },
-  { id: 'DART012', routeId: 'RT_P2', status: 'active', capacity: 80, driver: 'Neema Tarimo',    waypointIndex: 3,  direction: -1, speed: 42 },
+  { id: 'DART001', routeId: 'RT1',   status: 'offline', capacity: 80, driver: 'John Mwamba'    },
+  { id: 'DART002', routeId: 'RT1',   status: 'offline', capacity: 80, driver: 'Grace Ndovu'    },
+  { id: 'DART003', routeId: 'RT2',   status: 'offline', capacity: 60, driver: 'Peter Msigwa'   },
+  { id: 'DART004', routeId: 'RT4',   status: 'offline', capacity: 80, driver: 'Amina Salim'    },
+  { id: 'DART005', routeId: 'RT7',   status: 'offline', capacity: 80, driver: 'David Kipchoge' },
+  { id: 'DART006', routeId: 'RT3',   status: 'offline', capacity: 60, driver: 'Fatuma Hassan'  },
+  { id: 'DART007', routeId: 'RT5',   status: 'offline', capacity: 60, driver: 'Emmanuel Osei'  },
+  { id: 'DART008', routeId: 'RT6',   status: 'offline', capacity: 60, driver: 'Rose Mkwawa'    },
+  { id: 'DART009', routeId: 'RT10',  status: 'offline', capacity: 40, driver: 'Ibrahim Juma'   },
+  { id: 'DART010', routeId: 'RT1X',  status: 'offline', capacity: 80, driver: 'Zawadi Mushi'   },
+  { id: 'DART011', routeId: 'RT_P2', status: 'offline', capacity: 80, driver: 'Hassan Kombo'   },
+  { id: 'DART012', routeId: 'RT_P2', status: 'offline', capacity: 80, driver: 'Neema Tarimo'   },
 ];
 
 module.exports = { stations, routes, routeWaypoints, buses };

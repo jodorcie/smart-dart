@@ -53,26 +53,37 @@ const useDartStore = create((set, get) => ({
     set({ searchResults: results });
   },
 
-  // Merge live Firebase GPS over simulated positions
-  applyFirebaseOverlay: (fbData) => set(s => ({
-    firebaseLive: fbData,
-    buses: s.buses.map(bus => {
-      const fb = fbData[bus.id];
-      if (!fb || fb.latitude == null || fb.longitude == null) return bus;
-      return {
-        ...bus,
-        lat:        parseFloat(fb.latitude),
-        lng:        parseFloat(fb.longitude),
-        speed:      fb.speed      != null ? parseFloat(fb.speed)   : bus.speed,
-        heading:    fb.heading    != null ? parseFloat(fb.heading)  : (bus.heading || 0),
-        satellites: fb.satellites != null ? parseInt(fb.satellites) : bus.satellites,
-        hdop:       fb.hdop       != null ? parseFloat(fb.hdop)     : bus.hdop,
-        hasFix:     fb.hasFix     != null ? fb.hasFix               : true,
-        lastUpdate: fb.timestamp  || new Date().toISOString(),
-        gpsSource:  'firebase',
-      };
-    }),
-  })),
+  // Apply live Firebase GPS data — activates buses and sets out-of-area flag
+  applyFirebaseOverlay: (fbData) => set(s => {
+    // Dar es Salaam bounds
+    const inDar = (lat, lng) =>
+      lat >= -7.10 && lat <= -6.50 && lng >= 38.90 && lng <= 39.55;
+
+    return {
+      firebaseLive: fbData,
+      buses: s.buses.map(bus => {
+        const fb = fbData[bus.id];
+        if (!fb || fb.latitude == null || fb.longitude == null) return bus;
+        const lat  = parseFloat(fb.latitude);
+        const lng  = parseFloat(fb.longitude);
+        const inBounds = inDar(lat, lng);
+        return {
+          ...bus,
+          lat,
+          lng,
+          speed:      fb.speed      != null ? parseFloat(fb.speed)   : (bus.speed || 0),
+          heading:    fb.heading    != null ? parseFloat(fb.heading)  : (bus.heading || 0),
+          satellites: fb.satellites != null ? parseInt(fb.satellites) : (bus.satellites || 0),
+          hdop:       fb.hdop       != null ? parseFloat(fb.hdop)     : (bus.hdop || 99.9),
+          hasFix:     fb.hasFix     != null ? fb.hasFix               : true,
+          lastUpdate: fb.timestamp  || new Date().toISOString(),
+          gpsSource:  'firebase',
+          status:     'active',      // bus is live whenever Firebase has data
+          outOfArea:  !inBounds,
+        };
+      }),
+    };
+  }),
 
   // Admin CRUD helpers (update local state after API calls)
   addBus:       (bus)     => set(s => ({ buses: [...s.buses, bus] })),

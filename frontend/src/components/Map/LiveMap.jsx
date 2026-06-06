@@ -57,36 +57,37 @@ const routeLineLayer = {
 };
 
 // ── Bus Marker ─────────────────────────────────────────────────
-function BusMarker({ bus, routeColor, onClick, isLive, isFollowed }) {
-  const label = bus.id.replace('DART', '');
+function BusMarker({ bus, routeColor, onClick, isFollowed }) {
+  const label    = bus.id.replace('DART', '');
+  const outColor = bus.outOfArea ? '#FF6F00' : routeColor;
   return (
     <Marker longitude={bus.lng} latitude={bus.lat} anchor="center" onClick={onClick}>
       <div className="relative cursor-pointer" style={{ width: 40, height: 40 }}>
-        {/* Pulse ring – brighter when followed */}
+        {/* Pulse ring */}
         <div
           className="bus-pulse-ring"
-          style={{ background: isFollowed ? routeColor + '88' : routeColor + '44' }}
+          style={{ background: (isFollowed ? outColor + 'aa' : outColor + '44') }}
         />
         {/* Circle */}
         <div
           className="w-full h-full rounded-full flex items-center justify-center text-white font-black text-xs shadow-lg select-none"
           style={{
-            background: routeColor,
+            background: outColor,
             fontSize: 11,
             border: isFollowed ? '3px solid #fff' : '2px solid #fff',
           }}
         >
           {label}
         </div>
-        {/* LIVE / SIM badge */}
+        {/* Status badge */}
         <div
           className={`absolute -top-1 -right-1 text-white text-[7px] font-black rounded px-0.5 leading-tight ${
-            isLive ? 'bg-green-500' : 'bg-gray-400'
+            bus.outOfArea ? 'bg-orange-500' : 'bg-green-500'
           }`}
         >
-          {isLive ? 'LIVE' : 'SIM'}
+          {bus.outOfArea ? '⚠' : 'LIVE'}
         </div>
-        {/* Follow indicator */}
+        {/* Follow dot */}
         {isFollowed && (
           <div className="absolute -bottom-1 left-1/2 -translate-x-1/2 w-1.5 h-1.5 bg-white rounded-full shadow" />
         )}
@@ -99,7 +100,7 @@ function BusMarker({ bus, routeColor, onClick, isLive, isFollowed }) {
 function StationMarker({ station, onClick }) {
   const isTerminal = station.type === 'terminal';
   const isPhase2   = station.phase === 2;
-  const bg = isPhase2 ? '#FF6F00' : isTerminal ? '#212121' : '#1E88E5';
+  const bg   = isPhase2 ? '#FF6F00' : isTerminal ? '#212121' : '#1E88E5';
   const size = isTerminal ? 18 : 12;
   return (
     <Marker longitude={station.lng} latitude={station.lat} anchor="center" onClick={onClick}>
@@ -118,7 +119,11 @@ function StationMarker({ station, onClick }) {
 
 // ── Bus Popup ──────────────────────────────────────────────────
 function BusPopup({ bus, onClose, followed, onFollow }) {
-  const isLive = bus.gpsSource === 'firebase';
+  const sourceLabel =
+    bus.gpsSource === 'firebase' ? '● FIREBASE'
+    : bus.gpsSource === 'hardware' ? '● ESP32'
+    : '● LIVE';
+
   return (
     <Popup
       longitude={bus.lng} latitude={bus.lat}
@@ -128,30 +133,44 @@ function BusPopup({ bus, onClose, followed, onFollow }) {
       className="dart-popup"
     >
       <div className="text-xs min-w-[210px] p-1">
+
+        {/* Out-of-area warning banner */}
+        {bus.outOfArea && (
+          <div className="flex items-center gap-1.5 bg-orange-100 text-orange-700 rounded-lg px-2 py-1.5 mb-2 font-semibold">
+            <span>⚠️</span>
+            <span>Route Not Found — outside Dar es Salaam</span>
+          </div>
+        )}
+
         <div className="flex items-center gap-2 mb-2">
           <span className="text-base">🚌</span>
           <div className="flex-1">
             <div className="font-black text-sm text-gray-900">{bus.id}</div>
             <div className="text-gray-500">{bus.routeShort} · {bus.routeName}</div>
           </div>
-          <span className={`text-[9px] font-black px-1.5 py-0.5 rounded ${isLive ? 'bg-green-500 text-white' : 'bg-gray-200 text-gray-500'}`}>
-            {isLive ? '● LIVE GPS' : '◌ SIMULATED'}
+          <span className="text-[9px] font-black px-1.5 py-0.5 rounded bg-green-500 text-white">
+            {sourceLabel}
           </span>
         </div>
+
         <div className="grid grid-cols-2 gap-x-3 gap-y-1 text-xs mb-3">
           <span className="text-gray-400">Speed</span>
           <span className="font-semibold">{Math.round(bus.speed || 0)} km/h</span>
           <span className="text-gray-400">Heading</span>
           <span className="font-semibold">{bus.heading != null ? `${Math.round(bus.heading)}°` : '—'}</span>
           <span className="text-gray-400">Next Stop</span>
-          <span className="font-semibold truncate">{bus.nextStation || '—'}</span>
+          <span className="font-semibold truncate">
+            {bus.outOfArea ? 'N/A (out of area)' : (bus.nextStation || '—')}
+          </span>
           <span className="text-gray-400">ETA</span>
-          <span className="font-semibold text-green-600">{bus.etaMinutes ?? '—'} min</span>
+          <span className="font-semibold text-green-600">
+            {bus.outOfArea ? '—' : `${bus.etaMinutes ?? '—'} min`}
+          </span>
           <span className="text-gray-400">Passengers</span>
           <span className="font-semibold">{bus.passengers ?? '—'}/{bus.capacity}</span>
           <span className="text-gray-400">Driver</span>
           <span className="font-semibold">{bus.driver || '—'}</span>
-          {isLive && bus.satellites != null && (
+          {bus.satellites != null && (
             <>
               <span className="text-gray-400">Satellites</span>
               <span className="font-semibold">{bus.satellites}</span>
@@ -162,7 +181,7 @@ function BusPopup({ bus, onClose, followed, onFollow }) {
             {bus.lastUpdate ? new Date(bus.lastUpdate).toLocaleTimeString() : '—'}
           </span>
         </div>
-        {/* Follow / Unfollow toggle */}
+
         <button
           onClick={onFollow}
           className={`w-full py-1.5 rounded text-xs font-bold transition-colors ${
@@ -248,11 +267,30 @@ function MapLegend({ routes }) {
         </div>
         <div className="flex items-center gap-2">
           <div className="w-2 h-2 rounded bg-green-500 flex-shrink-0" />
-          <span className="text-xs text-gray-500">LIVE badge = ESP32</span>
+          <span className="text-xs text-gray-500">LIVE = ESP32 GPS</span>
         </div>
         <div className="flex items-center gap-2">
-          <div className="w-2 h-2 rounded bg-gray-400 flex-shrink-0" />
-          <span className="text-xs text-gray-500">SIM badge = simulated</span>
+          <div className="w-2 h-2 rounded bg-orange-500 flex-shrink-0" />
+          <span className="text-xs text-gray-500">⚠ = Out of Dar area</span>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── No-buses waiting overlay ───────────────────────────────────
+function NoBusesOverlay() {
+  return (
+    <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-10">
+      <div className="bg-white/95 backdrop-blur-sm rounded-2xl shadow-xl px-8 py-6 flex flex-col items-center gap-3 max-w-xs text-center pointer-events-auto">
+        <div className="text-4xl">📡</div>
+        <div className="font-black text-gray-800 text-base">Waiting for GPS Signal</div>
+        <p className="text-sm text-gray-500 leading-snug">
+          No buses are currently online. Buses will appear automatically when an ESP32 device sends GPS data.
+        </p>
+        <div className="flex items-center gap-2 text-xs text-gray-400 mt-1">
+          <span className="w-2 h-2 rounded-full bg-gray-300 animate-pulse" />
+          Listening for live data…
         </div>
       </div>
     </div>
@@ -271,6 +309,25 @@ function FollowHUD({ bus, onStop }) {
   );
 }
 
+// ── Out-of-area banner (top of map) ───────────────────────────
+function OutOfAreaBanner({ buses }) {
+  const outBuses = buses.filter(b => b.status === 'active' && b.outOfArea);
+  if (outBuses.length === 0) return null;
+  return (
+    <div className="absolute top-3 right-3 z-20 flex flex-col gap-1.5">
+      {outBuses.map(bus => (
+        <div
+          key={bus.id}
+          className="flex items-center gap-2 bg-orange-500 text-white text-xs px-3 py-1.5 rounded-full shadow-lg"
+        >
+          <span>⚠️</span>
+          <span><strong>{bus.id}</strong> — Route Not Found (outside Dar es Salaam)</span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 // ── Main Map ───────────────────────────────────────────────────
 export default function LiveMap() {
   const buses            = useDartStore(s => s.buses);
@@ -278,26 +335,31 @@ export default function LiveMap() {
   const stations         = useDartStore(s => s.stations);
   const waypoints        = useDartStore(s => s.waypoints);
   const stationArrivals  = useDartStore(s => s.stationArrivals);
-  const firebaseLive     = useDartStore(s => s.firebaseLive);
   const setSelectedBus     = useDartStore(s => s.setSelectedBus);
   const setSelectedStation = useDartStore(s => s.setSelectedStation);
 
   const mapRef = useRef(null);
-  const [viewState, setViewState]   = useState(INITIAL_VIEW);
-  const [popupBus,  setPopupBus]    = useState(null);
-  const [popupSt,   setPopupSt]     = useState(null);
-  const [followId,  setFollowId]    = useState(null); // bus ID being followed
+  const [viewState, setViewState] = useState(INITIAL_VIEW);
+  const [popupBus,  setPopupBus]  = useState(null);
+  const [popupSt,   setPopupSt]   = useState(null);
+  const [followId,  setFollowId]  = useState(null);
 
   const routeGeoJSON = useMemo(
     () => buildRouteGeoJSON(routes, waypoints),
     [routes, waypoints]
   );
 
+  // Only show buses that are active (have a real GPS fix)
+  const activeBuses = useMemo(
+    () => buses.filter(b => b.status === 'active' && b.lat != null && b.lng != null),
+    [buses]
+  );
+
   // ── Camera follow ──────────────────────────────────────────
   useEffect(() => {
     if (!followId) return;
-    const bus = buses.find(b => b.id === followId);
-    if (!bus || bus.lat == null || bus.lng == null) return;
+    const bus = activeBuses.find(b => b.id === followId);
+    if (!bus) { setFollowId(null); return; }
 
     setViewState(prev => ({
       ...prev,
@@ -307,12 +369,10 @@ export default function LiveMap() {
       pitch:   55,
       bearing: bus.heading || 0,
     }));
-
-    // Also keep the popup in sync
     setPopupBus(prev => (prev && prev.id === followId ? bus : prev));
-  }, [buses, followId]);
+  }, [activeBuses, followId]);
 
-  const followedBus = followId ? buses.find(b => b.id === followId) : null;
+  const followedBus = followId ? activeBuses.find(b => b.id === followId) : null;
 
   const handleBusClick = useCallback((bus, e) => {
     e?.originalEvent?.stopPropagation();
@@ -330,7 +390,6 @@ export default function LiveMap() {
 
   const handleFollow = useCallback((bus) => {
     if (followId === bus.id) {
-      // Unfollow — restore flat view
       setFollowId(null);
       setViewState(prev => ({ ...prev, pitch: 0, bearing: 0 }));
     } else {
@@ -349,7 +408,6 @@ export default function LiveMap() {
         ref={mapRef}
         {...viewState}
         onMove={e => {
-          // If user drags the map while following, stop following
           if (e.originalEvent) setFollowId(null);
           setViewState(e.viewState);
         }}
@@ -379,32 +437,33 @@ export default function LiveMap() {
           />
         ))}
 
-        {/* Bus markers */}
-        {buses.map(bus => {
-          if (bus.lat == null || bus.lng == null) return null;
-          const route  = routes.find(r => r.id === bus.routeId);
-          const isLive = bus.gpsSource === 'firebase';
+        {/* Bus markers — ONLY active buses with a valid GPS position */}
+        {activeBuses.map(bus => {
+          const route = routes.find(r => r.id === bus.routeId);
           return (
             <BusMarker
               key={bus.id}
               bus={bus}
               routeColor={route?.color || '#E53935'}
               onClick={e => handleBusClick(bus, e)}
-              isLive={isLive}
               isFollowed={followId === bus.id}
             />
           );
         })}
 
         {/* Bus popup */}
-        {popupBus && (
-          <BusPopup
-            bus={buses.find(b => b.id === popupBus.id) || popupBus}
-            onClose={() => setPopupBus(null)}
-            followed={followId === popupBus.id}
-            onFollow={() => handleFollow(popupBus)}
-          />
-        )}
+        {popupBus && (() => {
+          const live = activeBuses.find(b => b.id === popupBus.id);
+          if (!live) return null; // bus went offline — close popup
+          return (
+            <BusPopup
+              bus={live}
+              onClose={() => setPopupBus(null)}
+              followed={followId === live.id}
+              onFollow={() => handleFollow(live)}
+            />
+          );
+        })()}
 
         {/* Station popup */}
         {popupSt && (
@@ -418,6 +477,12 @@ export default function LiveMap() {
 
       {/* Follow HUD overlay */}
       <FollowHUD bus={followedBus} onStop={stopFollowing} />
+
+      {/* Out-of-area banners (top-right) */}
+      <OutOfAreaBanner buses={buses} />
+
+      {/* Waiting overlay — only when zero buses online */}
+      {activeBuses.length === 0 && <NoBusesOverlay />}
 
       <MapLegend routes={routes} />
     </div>
