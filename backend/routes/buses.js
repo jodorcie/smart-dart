@@ -21,8 +21,8 @@ module.exports = (state) => {
     const waypoints = state.routeWaypoints[routeId] || [];
     const newBus = {
       id, routeId, capacity: capacity || 60, driver: driver || 'Unassigned',
-      status: 'active', waypointIndex: 0, direction: 1, speed: 35,
-      lat: waypoints[0]?.[0], lng: waypoints[0]?.[1],
+      status: 'offline', lat: null, lng: null, speed: 0,
+      gpsSource: null, outOfArea: false, lastUpdate: null,
     };
     state.buses.push(newBus);
     res.status(201).json(newBus);
