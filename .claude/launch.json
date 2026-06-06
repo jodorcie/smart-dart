@@ -1,0 +1,12 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "smart-dart-frontend",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["run", "dev"],
+      "cwd": "C:\\Users\\PAVILION\\Documents\\claude\\smart-dart\\frontend",
+      "port": 5173
+    }
+  ]
+}
