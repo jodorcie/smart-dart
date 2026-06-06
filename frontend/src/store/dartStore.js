@@ -16,7 +16,7 @@ const useDartStore = create((set, get) => ({
   searchDest: '',
   searchResults: [],
   connectionStatus: 'connecting',
-  focusedRouteId: null,   // when set, map isolates this route
+  focusedRouteIds: [],    // when set, map isolates these routes (array supports transfers)
 
   // Actions
   setInit: (data) => set({
@@ -33,8 +33,11 @@ const useDartStore = create((set, get) => ({
   setSelectedBus: (bus) => set({ selectedBus: bus, selectedStation: null }),
   setSelectedStation: (station) => set({ selectedStation: station, selectedBus: null }),
   clearSelection: () => set({ selectedBus: null, selectedStation: null }),
-  setFocusedRoute: (routeId) => set({ focusedRouteId: routeId }),
-  clearFocusedRoute: () => set({ focusedRouteId: null }),
+  // Accept a single routeId string, or an array (for transfer journeys)
+  setFocusedRoute: (routeIdOrIds) => set({
+    focusedRouteIds: Array.isArray(routeIdOrIds) ? routeIdOrIds : [routeIdOrIds],
+  }),
+  clearFocusedRoute: () => set({ focusedRouteIds: [] }),
 
   setConnectionStatus: (status) => set({ connectionStatus: status }),
 
@@ -44,16 +47,74 @@ const useDartStore = create((set, get) => ({
   runSearch: () => {
     const { buses, routes, stations, searchOrigin, searchDest } = get();
     if (!searchOrigin || !searchDest) { set({ searchResults: [] }); return; }
-    const originSt  = stations.find(s => s.name.toLowerCase().includes(searchOrigin.toLowerCase()));
-    const destSt    = stations.find(s => s.name.toLowerCase().includes(searchDest.toLowerCase()));
+
+    const originSt = stations.find(s => s.name.toLowerCase().includes(searchOrigin.toLowerCase()));
+    const destSt   = stations.find(s => s.name.toLowerCase().includes(searchDest.toLowerCase()));
     if (!originSt || !destSt) { set({ searchResults: [] }); return; }
-    const results = routes.filter(r =>
-      r.stationIds.includes(originSt.id) && r.stationIds.includes(destSt.id)
-    ).map(r => {
-      const activeBuses = buses.filter(b => b.routeId === r.id && b.status === 'active');
-      return { route: r, buses: activeBuses, origin: originSt, dest: destSt };
-    });
-    set({ searchResults: results });
+
+    // ── 1. Direct routes (serve both origin & destination) ──────
+    const directResults = routes
+      .filter(r => r.active && r.stationIds.includes(originSt.id) && r.stationIds.includes(destSt.id))
+      .map(r => ({
+        type:   'direct',
+        key:    r.id,
+        route:  r,
+        buses:  buses.filter(b => b.routeId === r.id && b.status === 'active'),
+        origin: originSt,
+        dest:   destSt,
+      }));
+
+    // ── 2. Transfer routes (one bus change required) ─────────────
+    const activeRoutes = routes.filter(r => r.active);
+    const originRoutes = activeRoutes.filter(r => r.stationIds.includes(originSt.id));
+    const destRoutes   = activeRoutes.filter(r => r.stationIds.includes(destSt.id));
+    const transferResults = [];
+
+    for (const leg1 of originRoutes) {
+      for (const leg2 of destRoutes) {
+        if (leg1.id === leg2.id) continue; // direct already captured
+
+        // Find stations that both routes share (potential transfer points)
+        const sharedIds = leg1.stationIds.filter(id =>
+          id !== originSt.id && id !== destSt.id && leg2.stationIds.includes(id)
+        );
+
+        for (const transferId of sharedIds) {
+          const transferSt = stations.find(s => s.id === transferId);
+          if (!transferSt) continue;
+
+          // Avoid duplicate leg1+leg2+transfer combos
+          const dupe = transferResults.some(
+            r => r.legs[0].route.id === leg1.id &&
+                 r.legs[1].route.id === leg2.id &&
+                 r.transferStation.id === transferId
+          );
+          if (dupe) continue;
+
+          transferResults.push({
+            type:            'transfer',
+            key:             `${leg1.id}__${transferId}__${leg2.id}`,
+            transferStation: transferSt,
+            legs: [
+              {
+                route: leg1,
+                from:  originSt,
+                to:    transferSt,
+                buses: buses.filter(b => b.routeId === leg1.id && b.status === 'active'),
+              },
+              {
+                route: leg2,
+                from:  transferSt,
+                to:    destSt,
+                buses: buses.filter(b => b.routeId === leg2.id && b.status === 'active'),
+              },
+            ],
+          });
+        }
+      }
+    }
+
+    set({ searchResults: [...directResults, ...transferResults] });
   },
 
   // Apply live Firebase GPS data — activates buses and sets out-of-area flag

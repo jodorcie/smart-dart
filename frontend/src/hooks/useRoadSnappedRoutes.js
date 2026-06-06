@@ -14,7 +14,7 @@ const MAPBOX_TOKEN =
   import.meta.env.VITE_MAPBOX_TOKEN ||
   'pk.eyJ1Ijoibmd1c2h3YWkiLCJhIjoiY21wempsY2tuMDJ3ZjJzcjMxdXl0dzRoeiJ9.mdf2eIbYpquNdhM1sHUfEA';
 
-const CACHE_KEY = 'dart_snapped_routes_v2';
+const CACHE_KEY = 'dart_snapped_routes_v4'; // bump to force fresh fetch
 const CACHE_TTL = 24 * 60 * 60 * 1000; // 24 hours
 
 // ── localStorage helpers ──────────────────────────────────────
@@ -43,23 +43,33 @@ function subsample(arr, maxN = 25) {
   return result;
 }
 
-// ── Call Mapbox Directions for one route ──────────────────────
+// ── Call Mapbox Map Matching API for one route ────────────────
+// Map Matching snaps a GPS trace to the actual road geometry —
+// much more accurate than Directions for fixed transit routes.
+// Max 100 coordinates per request.
 async function fetchSnapped(waypoints) {
-  const pts = subsample(waypoints, 25); // Directions API max = 25 waypoints
+  const pts = subsample(waypoints, 100);
   if (pts.length < 2) return null;
 
-  // Waypoints stored as [lat, lng] — Directions needs lng,lat
-  const coordStr = pts.map(([lat, lng]) => `${lng},${lat}`).join(';');
+  // Build form-encoded body (Map Matching uses POST)
+  const coords    = pts.map(([lat, lng]) => `${lng},${lat}`).join(';');
+  const radiuses  = pts.map(() => '25').join(';'); // 25 m snap radius
+  const timestamps = pts.map((_, i) => i * 5).join(';'); // fake timestamps
 
   const url =
-    `https://api.mapbox.com/directions/v5/mapbox/driving/${coordStr}` +
-    `?geometries=geojson&overview=full&access_token=${MAPBOX_TOKEN}`;
+    `https://api.mapbox.com/matching/v5/mapbox/driving/${coords}` +
+    `?geometries=geojson&overview=full&radiuses=${radiuses}` +
+    `&access_token=${MAPBOX_TOKEN}`;
 
   const res = await fetch(url);
-  if (!res.ok) throw new Error(`Directions ${res.status}`);
+  if (!res.ok) throw new Error(`MapMatch HTTP ${res.status}`);
   const json = await res.json();
-  // Returns coordinates as [lng, lat] pairs — ready for GeoJSON
-  return json.routes?.[0]?.geometry?.coordinates ?? null;
+
+  if (json.code !== 'Ok' || !json.matchings?.[0]) {
+    console.warn('[RoadSnap] no matching returned, using straight lines');
+    return null;
+  }
+  return json.matchings[0].geometry.coordinates; // [lng, lat] pairs
 }
 
 // ── Main hook ─────────────────────────────────────────────────

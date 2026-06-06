@@ -301,8 +301,8 @@ export default function LiveMap() {
   const stations         = useDartStore(s => s.stations);
   const waypoints        = useDartStore(s => s.waypoints);
   const stationArrivals  = useDartStore(s => s.stationArrivals);
-  const focusedRouteId   = useDartStore(s => s.focusedRouteId);
-  const clearFocusedRoute = useDartStore(s => s.clearFocusedRoute);
+  const focusedRouteIds   = useDartStore(s => s.focusedRouteIds);
+  const clearFocusedRoute  = useDartStore(s => s.clearFocusedRoute);
   const setSelectedBus     = useDartStore(s => s.setSelectedBus);
   const setSelectedStation = useDartStore(s => s.setSelectedStation);
 
@@ -320,39 +320,41 @@ export default function LiveMap() {
   const fallbackGeoJSON = useMemo(() => buildFallbackGeoJSON(routes, waypoints), [routes, waypoints]);
   const baseGeoJSON     = snappedGeoJSON ?? fallbackGeoJSON;
 
-  // When a route is focused, build an isolated GeoJSON with others dimmed
+  // When route(s) are focused, dim everything else
   const routeGeoJSON = useMemo(() => {
-    if (!focusedRouteId) return baseGeoJSON;
+    if (!focusedRouteIds.length) return baseGeoJSON;
     return {
       ...baseGeoJSON,
       features: baseGeoJSON.features.map(f =>
-        f.properties.id === focusedRouteId
+        focusedRouteIds.includes(f.properties.id)
           ? f
           : { ...f, properties: { ...f.properties, color: '#d1d5db', opacity: 0.2 } }
       ),
     };
-  }, [baseGeoJSON, focusedRouteId]);
+  }, [baseGeoJSON, focusedRouteIds]);
 
   // User's live GPS location
   const { location: userLocation } = useGeolocation();
 
-  // Active buses — filtered to focused route when one is selected
+  // Active buses — filtered to focused routes when any are selected
   const activeBuses = useMemo(
     () => buses.filter(b =>
       b.status === 'active' && b.lat != null && b.lng != null &&
-      (!focusedRouteId || b.routeId === focusedRouteId)
+      (!focusedRouteIds.length || focusedRouteIds.includes(b.routeId))
     ),
-    [buses, focusedRouteId]
+    [buses, focusedRouteIds]
   );
 
-  // Fit map to focused route bounds when route is selected
+  // Fit map to all focused routes combined bounds when selection changes
   useEffect(() => {
-    if (!focusedRouteId || !mapRef.current) return;
-    const pts = (waypoints[focusedRouteId] || []);
-    if (pts.length < 2) return;
+    if (!focusedRouteIds.length || !mapRef.current) return;
 
-    const lngs = pts.map(([, lng]) => lng);
-    const lats = pts.map(([lat]) => lat);
+    // Gather waypoints from all focused routes
+    const allPts = focusedRouteIds.flatMap(id => waypoints[id] || []);
+    if (allPts.length < 2) return;
+
+    const lngs = allPts.map(([, lng]) => lng);
+    const lats = allPts.map(([lat]) => lat);
     const minLng = Math.min(...lngs), maxLng = Math.max(...lngs);
     const minLat = Math.min(...lats), maxLat = Math.max(...lats);
 
@@ -362,7 +364,7 @@ export default function LiveMap() {
       { padding: 80, duration: 800, pitch: 0, bearing: 0 }
     );
     setFollowId(null);
-  }, [focusedRouteId, waypoints]);
+  }, [focusedRouteIds, waypoints]);
 
   // ── Mapbox Directions control — added once after map loads ────
   const handleMapLoad = useCallback((e) => {
@@ -531,22 +533,44 @@ export default function LiveMap() {
       <OutOfAreaBanner buses={buses} />
 
       {/* No buses waiting state */}
-      {activeBuses.length === 0 && !focusedRouteId && <NoBusesOverlay />}
+      {activeBuses.length === 0 && !focusedRouteIds.length && <NoBusesOverlay />}
 
       {/* Route focus banner */}
-      {focusedRouteId && (() => {
-        const r = routes.find(x => x.id === focusedRouteId);
-        if (!r) return null;
+      {focusedRouteIds.length > 0 && (() => {
+        const focused = focusedRouteIds.map(id => routes.find(x => x.id === id)).filter(Boolean);
+        if (!focused.length) return null;
+
+        if (focused.length === 1) {
+          // Single route — coloured pill
+          const r = focused[0];
+          return (
+            <div className="absolute top-3 left-1/2 -translate-x-1/2 z-20 flex items-center gap-2 shadow-lg rounded-full px-3 py-2 text-xs font-bold text-white"
+              style={{ background: r.color }}>
+              <span>🔍</span>
+              <span>{r.shortName} · {r.name}</span>
+              <button onClick={clearFocusedRoute}
+                className="ml-1 bg-white/25 hover:bg-white/40 rounded-full px-2 py-0.5 transition-colors">
+                ✕ Show all routes
+              </button>
+            </div>
+          );
+        }
+
+        // Transfer journey — two coloured badges
         return (
-          <div className="absolute top-3 left-1/2 -translate-x-1/2 z-20 flex items-center gap-2 shadow-lg rounded-full px-3 py-2 text-xs font-bold text-white"
-            style={{ background: r.color }}>
-            <span>🔍</span>
-            <span>{r.shortName} · {r.name}</span>
-            <button
-              onClick={clearFocusedRoute}
-              className="ml-1 bg-white/25 hover:bg-white/40 rounded-full px-2 py-0.5 transition-colors"
-            >
-              ✕ Show all routes
+          <div className="absolute top-3 left-1/2 -translate-x-1/2 z-20 flex items-center gap-1.5 bg-gray-900/90 shadow-lg rounded-full px-3 py-2">
+            <span className="text-xs font-bold text-white">🔄</span>
+            {focused.map((r, i) => (
+              <React.Fragment key={r.id}>
+                <span className="text-[10px] font-black px-2 py-0.5 rounded-full text-white" style={{ background: r.color }}>
+                  {r.shortName}
+                </span>
+                {i < focused.length - 1 && <span className="text-gray-400 text-xs">→</span>}
+              </React.Fragment>
+            ))}
+            <button onClick={clearFocusedRoute}
+              className="ml-1 text-gray-400 hover:text-white text-xs transition-colors">
+              ✕
             </button>
           </div>
         );
