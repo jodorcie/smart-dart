@@ -25,13 +25,7 @@ const stations = [
   { id: 'ST_MUH', name: 'Muhimbili',                   lat: -6.8045, lng: 39.2790, type: 'terminal', corridor: 'P1-Feeder',   phase: 1, active: true },
 
   // ── Phase 1 – Morogoro Road trunk stations ───────────────────
-  { id: 'ST_W01', name: 'Mwisho wa Lami',              lat: -6.7858, lng: 39.1855, type: 'station',  corridor: 'P1-Morogoro', phase: 1, active: true },
-  { id: 'ST_W02', name: 'Mbezi Luis',                  lat: -6.7878, lng: 39.1938, type: 'station',  corridor: 'P1-Morogoro', phase: 1, active: true },
-  { id: 'ST_W03', name: 'Mwanakwerekwe',               lat: -6.7921, lng: 39.2022, type: 'station',  corridor: 'P1-Morogoro', phase: 1, active: true },
-  { id: 'ST_W04', name: 'Ubungo Maziwa',               lat: -6.7980, lng: 39.2138, type: 'station',  corridor: 'P1-Morogoro', phase: 1, active: true },
-  { id: 'ST_W05', name: 'Mwenge',                      lat: -6.7985, lng: 39.2232, type: 'station',  corridor: 'P1-Morogoro', phase: 1, active: true },
   { id: 'ST_W06', name: 'Mlimani City',                lat: -6.7989, lng: 39.2320, type: 'station',  corridor: 'P1-Morogoro', phase: 1, active: true },
-  { id: 'ST_W07', name: 'Makumbusho',                  lat: -6.7991, lng: 39.2362, type: 'station',  corridor: 'P1-Morogoro', phase: 1, active: true },
   { id: 'ST_W08', name: 'Magomeni Mapipa',             lat: -6.7992, lng: 39.2408, type: 'station',  corridor: 'P1-Morogoro', phase: 1, active: true },
   { id: 'ST_W09', name: 'Magomeni Hospital',           lat: -6.7994, lng: 39.2450, type: 'station',  corridor: 'P1-Morogoro', phase: 1, active: true },
   { id: 'ST_W10', name: 'Msimbazi',                    lat: -6.8003, lng: 39.2525, type: 'station',  corridor: 'P1-Morogoro', phase: 1, active: true },
@@ -62,7 +56,7 @@ const routes = [
   {
     id: 'RT1',  name: 'Kimara – Kivukoni',         shortName: '1',
     color: '#E53935', active: true, frequency: 8,  phase: 1,
-    stationIds: ['ST_KIM','ST_W01','ST_W02','ST_W03','ST_UBU','ST_W04','ST_W05','ST_W06','ST_W07','ST_W08','ST_W09','ST_W10','ST_W11','ST_W12','ST_FIR','ST_DIT','ST_KIS','ST_CCN','ST_POS','ST_KIV'],
+    stationIds: ['ST_KIM','ST_UBU','ST_W06','ST_W08','ST_W09','ST_W10','ST_W11','ST_W12','ST_FIR','ST_DIT','ST_KIS','ST_CCN','ST_POS','ST_KIV'],
   },
   {
     id: 'RT1X', name: 'Kimara – Kivukoni Express', shortName: '1X',
@@ -72,7 +66,7 @@ const routes = [
   {
     id: 'RT2',  name: 'Ubungo – Kivukoni',         shortName: '2',
     color: '#1E88E5', active: true, frequency: 10, phase: 1,
-    stationIds: ['ST_UBU','ST_W04','ST_W05','ST_W06','ST_W07','ST_W08','ST_W09','ST_W10','ST_W11','ST_W12','ST_FIR','ST_DIT','ST_KIS','ST_CCN','ST_POS','ST_KIV'],
+    stationIds: ['ST_UBU','ST_W06','ST_W08','ST_W09','ST_W10','ST_W11','ST_W12','ST_FIR','ST_DIT','ST_KIS','ST_CCN','ST_POS','ST_KIV'],
   },
   {
     id: 'RT3',  name: 'Morocco – Kivukoni',        shortName: '3',
@@ -82,7 +76,7 @@ const routes = [
   {
     id: 'RT4',  name: 'Kimara – Gerezani',         shortName: '4',
     color: '#43A047', active: true, frequency: 8,  phase: 1,
-    stationIds: ['ST_KIM','ST_W01','ST_W02','ST_W03','ST_UBU','ST_W04','ST_W05','ST_W06','ST_W07','ST_W08','ST_W09','ST_W10','ST_W11','ST_W12','ST_FIR','ST_GS1','ST_GER'],
+    stationIds: ['ST_KIM','ST_UBU','ST_W06','ST_W08','ST_W09','ST_W10','ST_W11','ST_W12','ST_FIR','ST_GS1','ST_GER'],
   },
   {
     id: 'RT4X', name: 'Kimara – Gerezani Express', shortName: '4X',
@@ -92,7 +86,7 @@ const routes = [
   {
     id: 'RT5',  name: 'Ubungo – Gerezani',         shortName: '5',
     color: '#8E24AA', active: true, frequency: 10, phase: 1,
-    stationIds: ['ST_UBU','ST_W04','ST_W05','ST_W06','ST_W07','ST_W08','ST_W09','ST_W10','ST_W11','ST_W12','ST_FIR','ST_GS1','ST_GER'],
+    stationIds: ['ST_UBU','ST_W06','ST_W08','ST_W09','ST_W10','ST_W11','ST_W12','ST_FIR','ST_GS1','ST_GER'],
   },
   {
     id: 'RT6',  name: 'Morocco – Gerezani',        shortName: '6',
@@ -102,7 +96,7 @@ const routes = [
   {
     id: 'RT7',  name: 'Kimara – Morocco',          shortName: '7',
     color: '#F4511E', active: true, frequency: 12, phase: 1,
-    stationIds: ['ST_KIM','ST_W01','ST_W02','ST_W03','ST_UBU','ST_MB1','ST_MB2','ST_MOR'],
+    stationIds: ['ST_KIM','ST_UBU','ST_MB1','ST_MB2','ST_MOR'],
   },
   {
     id: 'RT10', name: 'Gerezani – Muhimbili',      shortName: '10',
