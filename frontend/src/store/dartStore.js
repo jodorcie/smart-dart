@@ -16,6 +16,7 @@ const useDartStore = create((set, get) => ({
   searchDest: '',
   searchResults: [],
   connectionStatus: 'connecting',
+  focusedRouteId: null,   // when set, map isolates this route
 
   // Actions
   setInit: (data) => set({
@@ -32,6 +33,8 @@ const useDartStore = create((set, get) => ({
   setSelectedBus: (bus) => set({ selectedBus: bus, selectedStation: null }),
   setSelectedStation: (station) => set({ selectedStation: station, selectedBus: null }),
   clearSelection: () => set({ selectedBus: null, selectedStation: null }),
+  setFocusedRoute: (routeId) => set({ focusedRouteId: routeId }),
+  clearFocusedRoute: () => set({ focusedRouteId: null }),
 
   setConnectionStatus: (status) => set({ connectionStatus: status }),
 

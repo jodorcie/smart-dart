@@ -52,7 +52,11 @@ const routeLineLayer = {
   id: 'routes-line',
   type: 'line',
   layout: { 'line-join': 'round', 'line-cap': 'round' },
-  paint: { 'line-color': ['get', 'color'], 'line-width': 5, 'line-opacity': 0.85 },
+  paint: {
+    'line-color':   ['get', 'color'],
+    'line-width':   ['case', ['has', 'opacity'], 3, 5],
+    'line-opacity': ['case', ['has', 'opacity'], ['get', 'opacity'], 0.85],
+  },
 };
 
 // ── Haversine (km) ─────────────────────────────────────────────
@@ -297,6 +301,8 @@ export default function LiveMap() {
   const stations         = useDartStore(s => s.stations);
   const waypoints        = useDartStore(s => s.waypoints);
   const stationArrivals  = useDartStore(s => s.stationArrivals);
+  const focusedRouteId   = useDartStore(s => s.focusedRouteId);
+  const clearFocusedRoute = useDartStore(s => s.clearFocusedRoute);
   const setSelectedBus     = useDartStore(s => s.setSelectedBus);
   const setSelectedStation = useDartStore(s => s.setSelectedStation);
 
@@ -312,16 +318,51 @@ export default function LiveMap() {
   // Road-snapped routes (Mapbox Directions API, cached 24 h)
   const snappedGeoJSON  = useRoadSnappedRoutes(routes, waypoints);
   const fallbackGeoJSON = useMemo(() => buildFallbackGeoJSON(routes, waypoints), [routes, waypoints]);
-  const routeGeoJSON    = snappedGeoJSON ?? fallbackGeoJSON;
+  const baseGeoJSON     = snappedGeoJSON ?? fallbackGeoJSON;
+
+  // When a route is focused, build an isolated GeoJSON with others dimmed
+  const routeGeoJSON = useMemo(() => {
+    if (!focusedRouteId) return baseGeoJSON;
+    return {
+      ...baseGeoJSON,
+      features: baseGeoJSON.features.map(f =>
+        f.properties.id === focusedRouteId
+          ? f
+          : { ...f, properties: { ...f.properties, color: '#d1d5db', opacity: 0.2 } }
+      ),
+    };
+  }, [baseGeoJSON, focusedRouteId]);
 
   // User's live GPS location
   const { location: userLocation } = useGeolocation();
 
-  // Active buses only
+  // Active buses — filtered to focused route when one is selected
   const activeBuses = useMemo(
-    () => buses.filter(b => b.status === 'active' && b.lat != null && b.lng != null),
-    [buses]
+    () => buses.filter(b =>
+      b.status === 'active' && b.lat != null && b.lng != null &&
+      (!focusedRouteId || b.routeId === focusedRouteId)
+    ),
+    [buses, focusedRouteId]
   );
+
+  // Fit map to focused route bounds when route is selected
+  useEffect(() => {
+    if (!focusedRouteId || !mapRef.current) return;
+    const pts = (waypoints[focusedRouteId] || []);
+    if (pts.length < 2) return;
+
+    const lngs = pts.map(([, lng]) => lng);
+    const lats = pts.map(([lat]) => lat);
+    const minLng = Math.min(...lngs), maxLng = Math.max(...lngs);
+    const minLat = Math.min(...lats), maxLat = Math.max(...lats);
+
+    const map = mapRef.current.getMap();
+    map.fitBounds(
+      [[minLng, minLat], [maxLng, maxLat]],
+      { padding: 80, duration: 800, pitch: 0, bearing: 0 }
+    );
+    setFollowId(null);
+  }, [focusedRouteId, waypoints]);
 
   // ── Mapbox Directions control — added once after map loads ────
   const handleMapLoad = useCallback((e) => {
@@ -490,7 +531,26 @@ export default function LiveMap() {
       <OutOfAreaBanner buses={buses} />
 
       {/* No buses waiting state */}
-      {activeBuses.length === 0 && <NoBusesOverlay />}
+      {activeBuses.length === 0 && !focusedRouteId && <NoBusesOverlay />}
+
+      {/* Route focus banner */}
+      {focusedRouteId && (() => {
+        const r = routes.find(x => x.id === focusedRouteId);
+        if (!r) return null;
+        return (
+          <div className="absolute top-3 left-1/2 -translate-x-1/2 z-20 flex items-center gap-2 shadow-lg rounded-full px-3 py-2 text-xs font-bold text-white"
+            style={{ background: r.color }}>
+            <span>🔍</span>
+            <span>{r.shortName} · {r.name}</span>
+            <button
+              onClick={clearFocusedRoute}
+              className="ml-1 bg-white/25 hover:bg-white/40 rounded-full px-2 py-0.5 transition-colors"
+            >
+              ✕ Show all routes
+            </button>
+          </div>
+        );
+      })()}
 
       {/* Nearest stop + Get Directions chip */}
       {!showDirections && (
