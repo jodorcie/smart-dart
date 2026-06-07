@@ -15,7 +15,7 @@ const MAPBOX_TOKEN =
   import.meta.env.VITE_MAPBOX_TOKEN ||
   'pk.eyJ1Ijoibmd1c2h3YWkiLCJhIjoiY21wempsY2tuMDJ3ZjJzcjMxdXl0dzRoeiJ9.mdf2eIbYpquNdhM1sHUfEA';
 
-const CACHE_KEY = 'dart_snapped_routes_v6'; // bump to force fresh fetch
+const CACHE_KEY = 'dart_snapped_routes_v7'; // bumped: precise 6-decimal station coords
 const CACHE_TTL = 24 * 60 * 60 * 1000;     // 24 h
 
 // ── localStorage helpers ──────────────────────────────────────
