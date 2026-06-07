@@ -1,0 +1,444 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Smart DART – System Flow Diagram</title>
+  <script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: 'Segoe UI', Arial, sans-serif;
+      background: #0f172a;
+      color: #e2e8f0;
+      min-height: 100vh;
+      padding: 32px 24px;
+    }
+
+    h1 {
+      text-align: center;
+      font-size: 1.8rem;
+      font-weight: 800;
+      color: #f1f5f9;
+      letter-spacing: 0.02em;
+      margin-bottom: 4px;
+    }
+    .subtitle {
+      text-align: center;
+      font-size: 0.85rem;
+      color: #94a3b8;
+      margin-bottom: 36px;
+    }
+
+    .section {
+      background: #1e293b;
+      border: 1px solid #334155;
+      border-radius: 16px;
+      padding: 28px 24px;
+      margin-bottom: 28px;
+      max-width: 1200px;
+      margin-left: auto;
+      margin-right: auto;
+    }
+
+    .section-title {
+      font-size: 0.78rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.12em;
+      color: #64748b;
+      margin-bottom: 18px;
+      border-bottom: 1px solid #334155;
+      padding-bottom: 10px;
+    }
+
+    .mermaid { width: 100%; }
+
+    /* legend */
+    .legend {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 12px;
+      justify-content: center;
+      margin-bottom: 28px;
+      max-width: 1200px;
+      margin-left: auto;
+      margin-right: auto;
+    }
+    .legend-item {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      background: #1e293b;
+      border: 1px solid #334155;
+      border-radius: 8px;
+      padding: 8px 14px;
+      font-size: 0.78rem;
+      color: #cbd5e1;
+    }
+    .legend-dot {
+      width: 12px; height: 12px; border-radius: 3px; flex-shrink: 0;
+    }
+  </style>
+</head>
+<body>
+
+<h1>🚌 Smart DART — System Flow Diagram</h1>
+<p class="subtitle">Real-Time Bus Tracking System · Dar es Salaam, Tanzania</p>
+
+<!-- Legend -->
+<div class="legend">
+  <div class="legend-item"><div class="legend-dot" style="background:#3b82f6"></div>Frontend (React / Vercel)</div>
+  <div class="legend-item"><div class="legend-dot" style="background:#10b981"></div>Backend (Node.js / Render)</div>
+  <div class="legend-item"><div class="legend-dot" style="background:#f59e0b"></div>Firebase Realtime DB</div>
+  <div class="legend-item"><div class="legend-dot" style="background:#8b5cf6"></div>Mapbox API</div>
+  <div class="legend-item"><div class="legend-dot" style="background:#ef4444"></div>GPS Device / Bus</div>
+  <div class="legend-item"><div class="legend-dot" style="background:#64748b"></div>User / Operator</div>
+</div>
+
+<!-- ─── DIAGRAM 1: High-level architecture ─── -->
+<div class="section">
+  <div class="section-title">1 · High-Level System Architecture</div>
+  <div class="mermaid">
+graph TB
+    subgraph HARDWARE["🚌  On-Bus Hardware"]
+      GPS["📡 GPS Tracker\n(Phone / Device)"]
+    end
+
+    subgraph FIREBASE["☁️  Firebase Realtime Database"]
+      FB[("dart-buses / {busId}\n lat · lng · speed\n heading · hasFix\n satellites · hdop")]
+    end
+
+    subgraph BACKEND["🟢  Backend  —  Node.js + Express + Socket.IO\n(Render Cloud)"]
+      REST["REST API\n/api/buses\n/api/routes\n/api/stations"]
+      SOCK["Socket.IO Server\n:3001"]
+      DATA["In-Memory Store\ninitialData.js\nstations · routes · buses"]
+      AUTH["Auth Middleware\noperator login"]
+    end
+
+    subgraph FRONTEND["🔵  Frontend  —  React + Vite + Mapbox GL\n(Vercel)"]
+      STORE["Zustand Store\ndartStore.js"]
+      MAP["LiveMap.jsx\nMapbox GL JS"]
+      SEARCH["RouteSearch.jsx\nDirect + Transfer"]
+      ADMIN["Admin Panel\n/operator/*"]
+      FBSDK["Firebase SDK\nonValue listener"]
+    end
+
+    subgraph MAPBOX["🟣  Mapbox Cloud APIs"]
+      DIR["Directions API\n/driving with\nstation waypoints"]
+      TILES["Map Tiles\nStreet / Satellite"]
+    end
+
+    GPS -->|"HTTPS PUT\nGPS payload"| FB
+    FB -->|"onValue()\nreal-time stream"| FBSDK
+    FBSDK -->|"applyFirebaseOverlay()"| STORE
+
+    SOCK -->|"init event\n{ buses, routes, stations }"| STORE
+    SOCK -->|"busUpdate, arrivals"| STORE
+    REST <-->|"CRUD operations"| ADMIN
+    DATA <--> REST
+    DATA <--> SOCK
+    AUTH --> REST
+
+    STORE --> MAP
+    STORE --> SEARCH
+    MAP -->|"station coords\nas waypoints"| DIR
+    DIR -->|"GeoJSON LineStrings\ncached 24 h (v7)"| MAP
+    MAP -->|"raster tiles"| TILES
+
+    style HARDWARE fill:#7f1d1d,stroke:#ef4444,color:#fca5a5
+    style FIREBASE fill:#78350f,stroke:#f59e0b,color:#fde68a
+    style BACKEND fill:#064e3b,stroke:#10b981,color:#a7f3d0
+    style FRONTEND fill:#1e3a5f,stroke:#3b82f6,color:#bfdbfe
+    style MAPBOX fill:#3b0764,stroke:#8b5cf6,color:#ddd6fe
+  </div>
+</div>
+
+<!-- ─── DIAGRAM 2: Passenger journey ─── -->
+<div class="section">
+  <div class="section-title">2 · Passenger App Flow</div>
+  <div class="mermaid">
+flowchart TD
+    A([🧍 Passenger opens app]) --> B[App connects to\nSocket.IO server]
+    B --> C{Connection\nsuccessful?}
+    C -- No --> D[Show 'Cannot reach server'\nerror banner]
+    C -- Yes --> E[Receive init event:\nroutes · stations · buses]
+
+    E --> F[Zustand store populated]
+    F --> G[Map renders:\nStation markers\nRoute lines]
+
+    G --> H[Firebase SDK listener\nattaches to dart-buses/*]
+    H --> I{Live GPS data\narriving?}
+    I -- No --> J[📡 'Waiting for GPS Signal'\nchip shown top-right]
+    I -- Yes --> K[Bus markers appear\non map with heading\narrow + speed badge]
+
+    K --> L[User taps bus marker]
+    L --> M[BusInfoPanel slides up:\nbusId · route · speed\nheading · GPS quality]
+
+    F --> N[User opens Route Search]
+    N --> O[Types origin + destination\nstation names]
+    O --> P[runSearch triggered]
+
+    P --> Q{Direct route\nexists?}
+    Q -- Yes --> R[DirectCard shown:\nroute name · buses · ETA]
+    Q -- No / Also --> S[Transfer search:\nfind shared stations\nbetween leg1 and leg2 routes]
+    S --> T[TransferCard shown:\nLeg 1 → Change at X → Leg 2]
+
+    R --> U[User taps card]
+    T --> U
+    U --> V[Map isolates\nfocused route lines\nother routes dimmed]
+    V --> W[fitBounds zooms to\nroute station extent]
+
+    style A fill:#1d4ed8,stroke:#3b82f6,color:#fff
+    style K fill:#065f46,stroke:#10b981,color:#a7f3d0
+    style J fill:#44403c,stroke:#78716c,color:#d6d3d1
+    style R fill:#065f46,stroke:#10b981,color:#a7f3d0
+    style T fill:#78350f,stroke:#f59e0b,color:#fde68a
+    style V fill:#1e3a5f,stroke:#3b82f6,color:#bfdbfe
+  </div>
+</div>
+
+<!-- ─── DIAGRAM 3: GPS pipeline ─── -->
+<div class="section">
+  <div class="section-title">3 · Live GPS Data Pipeline</div>
+  <div class="mermaid">
+sequenceDiagram
+    participant GPS as 📡 GPS Device
+    participant FB  as Firebase DB
+    participant SDK as Firebase SDK<br/>(browser)
+    participant ZS  as Zustand Store
+    participant MAP as LiveMap.jsx
+
+    GPS->>FB: PUT /dart-buses/DART001<br/>{ lat, lng, speed, heading,<br/>  satellites, hdop, hasFix, timestamp }
+    Note over FB: Realtime push to all listeners
+
+    FB-->>SDK: onValue() callback fires
+    SDK->>ZS: applyFirebaseOverlay(fbData)
+    Note over ZS: For each bus with FB entry:<br/>• parse lat/lng as float<br/>• validate Dar es Salaam bounds<br/>• set status = 'active'<br/>• set outOfArea flag if outside bounds
+
+    ZS-->>MAP: buses array updated (React re-render)
+    MAP->>MAP: Bus Marker positioned at new lat/lng
+    MAP->>MAP: Heading arrow rotated
+    MAP->>MAP: Speed badge updated
+
+    Note over MAP: If outOfArea = true:<br/>Marker shown with ⚠️ badge
+    Note over MAP: If no Firebase data for bus:<br/>Bus stays 'offline' (hidden from map)
+  </div>
+</div>
+
+<!-- ─── DIAGRAM 4: Route road-snapping ─── -->
+<div class="section">
+  <div class="section-title">4 · Route Road-Snapping Flow (useRoadSnappedRoutes)</div>
+  <div class="mermaid">
+flowchart TD
+    A([Hook mounts:\nroutes + stations ready]) --> B{Cache key\ndart_snapped_routes_v7\nin localStorage?}
+    B -- Hit and fresh\n< 24 h --> C[Return cached GeoJSON\ninstantly]
+    B -- Miss or expired --> D[Loop over active routes]
+
+    D --> E[For each route:\nbuild ordered station\ncoord list from stationIds]
+    E --> F{More than 25\nstations?}
+    F -- Yes --> G[Subsample evenly\nto 25 waypoints\nDirections API max]
+    F -- No --> H[Use all station coords]
+    G --> H
+
+    H --> I[Call Mapbox Directions API\n/driving/lng1,lat1;lng2,lat2;...\n?geometries=geojson&overview=full]
+
+    I --> J{API response\nok?}
+    J -- Success --> K[Extract routes[0].geometry.coordinates\nroad-snapped LineString]
+    J -- Error / No route --> L[Fallback: straight line\nthrough station positions]
+
+    K --> M[Add GeoJSON Feature:\ncolor · name · id · phase]
+    L --> M
+
+    M --> N{More routes\nto process?}
+    N -- Yes --> D
+    N -- Done --> O[Write full FeatureCollection\nto localStorage v7]
+    O --> P[setGeoJSON → map re-renders\nwith road-following lines]
+
+    style A fill:#1e3a5f,stroke:#3b82f6,color:#bfdbfe
+    style C fill:#065f46,stroke:#10b981,color:#a7f3d0
+    style K fill:#065f46,stroke:#10b981,color:#a7f3d0
+    style L fill:#78350f,stroke:#f59e0b,color:#fde68a
+    style P fill:#1e3a5f,stroke:#3b82f6,color:#bfdbfe
+  </div>
+</div>
+
+<!-- ─── DIAGRAM 5: Transfer routing ─── -->
+<div class="section">
+  <div class="section-title">5 · Transfer Journey Search Algorithm</div>
+  <div class="mermaid">
+flowchart TD
+    A(["runSearch() called\norigin = Kimara\ndest = Muhimbili*"]) --> B[Find originSt and destSt\nfrom stations array]
+    B --> C[Direct search:\nfilter routes where stationIds\ncontains both origin AND dest]
+    C --> D{Any direct\nroutes found?}
+    D -- Yes --> E[Add as DirectCard results]
+    D -- None / Also --> F[Transfer search]
+
+    F --> G[originRoutes = routes\nthat serve origin station]
+    F --> H[destRoutes = routes\nthat serve dest station]
+
+    G --> I[For each leg1 in originRoutes\nFor each leg2 in destRoutes]
+    H --> I
+
+    I --> J{leg1.id\n= leg2.id?}
+    J -- Yes --> K[Skip: already a direct route]
+    J -- No --> L[sharedIds = leg1.stationIds\n∩ leg2.stationIds\nexcluding origin and dest]
+
+    L --> M{Any shared\nstations?}
+    M -- None --> N[No transfer via this pair]
+    M -- Found --> O[For each shared station:\ncreate TransferResult]
+
+    O --> P["TransferCard:\nLeg 1: RT7 Kimara→Magomeni Mapipa\n🔄 Change at Magomeni Mapipa\nLeg 2: RT3 Magomeni Mapipa→Kivukoni"]
+
+    E --> Q[Render searchResults:\nX direct · Y with transfer]
+    P --> Q
+
+    style A fill:#1d4ed8,stroke:#3b82f6,color:#fff
+    style E fill:#065f46,stroke:#10b981,color:#a7f3d0
+    style P fill:#78350f,stroke:#f59e0b,color:#fde68a
+    style Q fill:#1e3a5f,stroke:#3b82f6,color:#bfdbfe
+    style K fill:#44403c,stroke:#78716c,color:#d6d3d1
+  </div>
+</div>
+
+<!-- ─── DIAGRAM 6: Operator / Admin flow ─── -->
+<div class="section">
+  <div class="section-title">6 · Operator Admin Panel Flow</div>
+  <div class="mermaid">
+flowchart LR
+    A([Operator visits\n/operator/login]) --> B[Enters credentials\nusername: operator\npassword: dart2024]
+    B --> C{POST /api/auth/login\nBackend validates}
+    C -- Invalid --> D[Error: incorrect credentials]
+    C -- Valid --> E[JWT token stored\nauthStore.js]
+    E --> F[Redirect to\n/operator/dashboard]
+
+    F --> G[Dashboard tabs]
+    G --> H[Buses tab\nCRUD: add/edit/remove]
+    G --> I[Routes tab\ntoggle active/inactive]
+    G --> J[Stations tab\nview all 53 stations]
+    G --> K[Live Monitor\nbus positions + status]
+
+    H --> L[PUT/POST/DELETE\n/api/buses/:id]
+    I --> M[PUT /api/routes/:id\nactive flag]
+    L --> N[Backend updates\nin-memory store]
+    M --> N
+    N --> O[Socket.IO broadcasts\nupdated data to all clients]
+
+    style A fill:#44403c,stroke:#78716c,color:#d6d3d1
+    style E fill:#065f46,stroke:#10b981,color:#a7f3d0
+    style O fill:#1e3a5f,stroke:#3b82f6,color:#bfdbfe
+  </div>
+</div>
+
+<!-- ─── DIAGRAM 7: Corridor map ─── -->
+<div class="section">
+  <div class="section-title">7 · DART BRT Physical Corridor Map</div>
+  <div class="mermaid">
+graph LR
+    KIM["🚉 Kimara Terminal\n−6.784532, 39.176421"]
+    UBU["🚉 Ubungo Terminal\n−6.798950, 39.219800"]
+    MGP["⊕ Magomeni Mapipa\n−6.804200, 39.259450\nJunction node"]
+    FIR["⊕ Fire Station\n−6.813150, 39.282450\nBranch node"]
+    KIV["🚉 Kivukoni Terminal\n−6.818451, 39.296312"]
+    GER["🚉 Gerezani Terminal\n−6.822987, 39.280145"]
+    MOR["🚉 Morocco Terminal\n−6.783102, 39.256841"]
+    MBR["🚉 Mbagala Rangi Tatu\n−6.908471, 39.266214"]
+    DIT["⊕ DIT / Gerezani Jct\n−6.814231, 39.285891\nP1∩P2 interchange"]
+
+    KIM -->|"Morogoro Road\n10 stations"| UBU
+    UBU -->|"4 stations"| MGP
+    MGP -->|"3 stations"| FIR
+    FIR -->|"Sokoine Drive\n4 stations"| KIV
+
+    FIR -->|"Msimbazi St\nMSA · MSB"| GER
+
+    MGP -->|"Kawawa Road\n↑ North\nMGH · KNS\nMKK · MWN · KNB"| MOR
+
+    MBR -->|"Kilwa Road ↑\n15 stations"| DIT
+    DIT -->|"Coastal road\nBND · RLW · WZR"| KIV
+
+    style KIM fill:#7f1d1d,stroke:#ef4444,color:#fca5a5
+    style UBU fill:#7f1d1d,stroke:#ef4444,color:#fca5a5
+    style KIV fill:#7f1d1d,stroke:#ef4444,color:#fca5a5
+    style GER fill:#1d4ed8,stroke:#3b82f6,color:#bfdbfe
+    style MOR fill:#78350f,stroke:#f59e0b,color:#fde68a
+    style MBR fill:#065f46,stroke:#10b981,color:#a7f3d0
+    style MGP fill:#3b0764,stroke:#8b5cf6,color:#ddd6fe
+    style FIR fill:#3b0764,stroke:#8b5cf6,color:#ddd6fe
+    style DIT fill:#3b0764,stroke:#8b5cf6,color:#ddd6fe
+  </div>
+</div>
+
+<!-- ─── DIAGRAM 8: Tech stack ─── -->
+<div class="section">
+  <div class="section-title">8 · Technology Stack</div>
+  <div class="mermaid">
+graph TD
+    subgraph DEPLOY["☁️  Deployment"]
+      V["Vercel\nFrontend CDN"]
+      R["Render\nBackend server"]
+      FB2["Firebase\nRealtime Database"]
+      GH["GitHub\njodorcie/smart-dart"]
+    end
+
+    subgraph FE["Frontend Stack"]
+      REACT["React 18 + Vite"]
+      TW["Tailwind CSS"]
+      MBX["react-map-gl v7\nMapbox GL JS"]
+      ZU["Zustand\nState management"]
+      FBS["Firebase SDK\n(browser)"]
+    end
+
+    subgraph BE["Backend Stack"]
+      EX["Express.js"]
+      SIO["Socket.IO"]
+      CORS["CORS middleware\nALLOWED_ORIGINS"]
+      INIT["initialData.js\n53 stations · 11 routes\n12 buses"]
+    end
+
+    subgraph APIS["External APIs"]
+      DIR2["Mapbox Directions API\nv5/mapbox/driving"]
+      TILES2["Mapbox Map Tiles"]
+    end
+
+    GH -->|"git push → auto deploy"| V
+    GH -->|"git push → auto deploy"| R
+    V --> FE
+    R --> BE
+    FE -->|"WebSocket"| BE
+    FE -->|"onValue()"| FB2
+    FE -->|"HTTPS"| APIS
+
+    style DEPLOY fill:#0f172a,stroke:#334155,color:#94a3b8
+    style FE fill:#1e3a5f,stroke:#3b82f6,color:#bfdbfe
+    style BE fill:#064e3b,stroke:#10b981,color:#a7f3d0
+    style APIS fill:#3b0764,stroke:#8b5cf6,color:#ddd6fe
+  </div>
+</div>
+
+<script>
+  mermaid.initialize({
+    startOnLoad: true,
+    theme: 'dark',
+    themeVariables: {
+      primaryColor: '#1e293b',
+      primaryTextColor: '#e2e8f0',
+      primaryBorderColor: '#475569',
+      lineColor: '#64748b',
+      secondaryColor: '#0f172a',
+      tertiaryColor: '#1e293b',
+      background: '#0f172a',
+      mainBkg: '#1e293b',
+      nodeBorder: '#475569',
+      clusterBkg: '#0f172a',
+      titleColor: '#f1f5f9',
+      edgeLabelBackground: '#1e293b',
+      fontSize: '13px',
+    },
+    flowchart: { curve: 'basis', useMaxWidth: true },
+    sequence: { useMaxWidth: true },
+  });
+</script>
+</body>
+</html>
