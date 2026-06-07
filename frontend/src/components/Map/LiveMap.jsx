@@ -252,16 +252,15 @@ function MapLegend({ routes }) {
 
 function NoBusesOverlay() {
   return (
-    <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-10">
-      <div className="bg-white/95 backdrop-blur-sm rounded-2xl shadow-xl px-8 py-6 flex flex-col items-center gap-3 max-w-xs text-center pointer-events-auto">
-        <div className="text-4xl">📡</div>
-        <div className="font-black text-gray-800 text-base">Waiting for GPS Signal</div>
-        <p className="text-sm text-gray-500 leading-snug">
-          Buses appear automatically when an ESP32 GPS tracker comes online.
-        </p>
-        <div className="flex items-center gap-2 text-xs text-gray-400 mt-1">
-          <span className="w-2 h-2 rounded-full bg-gray-300 animate-pulse" />
-          Listening for live data…
+    <div className="absolute top-14 right-3 z-10 pointer-events-none">
+      <div className="bg-white/90 backdrop-blur-sm rounded-xl shadow-md px-3 py-2 flex items-center gap-2 pointer-events-auto">
+        <span className="text-base">📡</span>
+        <div>
+          <div className="text-xs font-black text-gray-800 leading-tight">Waiting for GPS Signal</div>
+          <div className="flex items-center gap-1 mt-0.5">
+            <span className="w-1.5 h-1.5 rounded-full bg-gray-400 animate-pulse flex-shrink-0" />
+            <span className="text-[10px] text-gray-400">Listening for live data…</span>
+          </div>
         </div>
       </div>
     </div>
