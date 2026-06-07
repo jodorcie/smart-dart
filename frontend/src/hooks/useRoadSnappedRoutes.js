@@ -1,12 +1,13 @@
 /**
  * useRoadSnappedRoutes
  *
- * For each active route, calls the Mapbox Directions API with the route's
- * key waypoints and returns a GeoJSON FeatureCollection whose LineStrings
- * follow the actual road network shown on the map.
+ * Uses the Mapbox Directions API with each route's STATION COORDINATES
+ * as waypoints.  This guarantees:
+ *   1. Route lines pass through every station marker (no floating dots)
+ *   2. Lines follow actual roads — Kawawa Road for Morocco, Kilwa Road for P2
+ *   3. Mbagala Phase-2 route is always drawn
  *
- * Results are cached in localStorage for 24 h so the API is only called
- * once per day per browser, not on every page load.
+ * Results are cached in localStorage for 24 h (key v6).
  */
 import { useState, useEffect } from 'react';
 
@@ -14,8 +15,8 @@ const MAPBOX_TOKEN =
   import.meta.env.VITE_MAPBOX_TOKEN ||
   'pk.eyJ1Ijoibmd1c2h3YWkiLCJhIjoiY21wempsY2tuMDJ3ZjJzcjMxdXl0dzRoeiJ9.mdf2eIbYpquNdhM1sHUfEA';
 
-const CACHE_KEY = 'dart_snapped_routes_v5'; // bump to force fresh fetch
-const CACHE_TTL = 24 * 60 * 60 * 1000; // 24 hours
+const CACHE_KEY = 'dart_snapped_routes_v6'; // bump to force fresh fetch
+const CACHE_TTL = 24 * 60 * 60 * 1000;     // 24 h
 
 // ── localStorage helpers ──────────────────────────────────────
 function readCache() {
@@ -27,64 +28,53 @@ function readCache() {
   } catch {}
   return null;
 }
-
 function writeCache(data) {
   try {
     localStorage.setItem(CACHE_KEY, JSON.stringify({ ts: Date.now(), data }));
   } catch {}
 }
 
-// ── Evenly subsample an array to at most maxN elements ────────
+// Evenly subsample to at most maxN points
 function subsample(arr, maxN = 25) {
   if (arr.length <= maxN) return arr;
-  const result = [];
+  const out = [];
   const step = (arr.length - 1) / (maxN - 1);
-  for (let i = 0; i < maxN; i++) result.push(arr[Math.round(i * step)]);
-  return result;
+  for (let i = 0; i < maxN; i++) out.push(arr[Math.round(i * step)]);
+  return out;
 }
 
-// ── Call Mapbox Map Matching API for one route ────────────────
-// Map Matching snaps a GPS trace to the actual road geometry —
-// much more accurate than Directions for fixed transit routes.
-// Max 100 coordinates per request.
-async function fetchSnapped(waypoints) {
-  const pts = subsample(waypoints, 100);
+// ── Mapbox Directions API (driving) with station coords ───────
+async function fetchSnapped(stationCoords) {
+  const pts = subsample(stationCoords, 25); // Directions max = 25 waypoints
   if (pts.length < 2) return null;
 
-  // Build form-encoded body (Map Matching uses POST)
-  const coords    = pts.map(([lat, lng]) => `${lng},${lat}`).join(';');
-  const radiuses  = pts.map(() => '25').join(';'); // 25 m snap radius
-  const timestamps = pts.map((_, i) => i * 5).join(';'); // fake timestamps
-
+  const coordStr = pts.map(s => `${s.lng},${s.lat}`).join(';');
   const url =
-    `https://api.mapbox.com/matching/v5/mapbox/driving/${coords}` +
-    `?geometries=geojson&overview=full&radiuses=${radiuses}` +
-    `&access_token=${MAPBOX_TOKEN}`;
+    `https://api.mapbox.com/directions/v5/mapbox/driving/${coordStr}` +
+    `?geometries=geojson&overview=full&access_token=${MAPBOX_TOKEN}`;
 
   const res = await fetch(url);
-  if (!res.ok) throw new Error(`MapMatch HTTP ${res.status}`);
+  if (!res.ok) throw new Error(`Directions HTTP ${res.status}`);
   const json = await res.json();
 
-  if (json.code !== 'Ok' || !json.matchings?.[0]) {
-    console.warn('[RoadSnap] no matching returned, using straight lines');
+  if (!json.routes?.[0]) {
+    console.warn('[RoadSnap] no route returned for coords');
     return null;
   }
-  return json.matchings[0].geometry.coordinates; // [lng, lat] pairs
+  return json.routes[0].geometry.coordinates; // already [lng, lat] pairs
 }
 
 // ── Main hook ─────────────────────────────────────────────────
-export default function useRoadSnappedRoutes(routes, waypoints) {
+// routes   — from dartStore (route objects with stationIds, color, etc.)
+// stations — from dartStore (station objects with id, lat, lng)
+export default function useRoadSnappedRoutes(routes, stations) {
   const [geoJSON, setGeoJSON] = useState(null);
 
   useEffect(() => {
-    if (!routes.length || !Object.keys(waypoints).length) return;
+    if (!routes.length || !stations.length) return;
 
-    // Return cached data immediately if still fresh
     const cached = readCache();
-    if (cached) {
-      setGeoJSON(cached);
-      return;
-    }
+    if (cached) { setGeoJSON(cached); return; }
 
     let cancelled = false;
 
@@ -92,15 +82,24 @@ export default function useRoadSnappedRoutes(routes, waypoints) {
       const features = [];
 
       for (const route of routes) {
-        if (!route.active || !waypoints[route.id]) continue;
+        if (!route.active) continue;
+
+        // Build ordered station coordinate list for this route
+        const stationCoords = (route.stationIds || [])
+          .map(id => stations.find(s => s.id === id))
+          .filter(Boolean)
+          .map(s => ({ lat: s.lat, lng: s.lng }));
+
+        if (stationCoords.length < 2) continue;
 
         let coordinates;
         try {
-          const snapped = await fetchSnapped(waypoints[route.id]);
-          coordinates = snapped ?? waypoints[route.id].map(([lat, lng]) => [lng, lat]);
+          const snapped = await fetchSnapped(stationCoords);
+          // Fallback: straight segments through station positions
+          coordinates = snapped ?? stationCoords.map(s => [s.lng, s.lat]);
         } catch (err) {
-          console.warn(`[RoadSnap] ${route.id} fallback to straight lines:`, err.message);
-          coordinates = waypoints[route.id].map(([lat, lng]) => [lng, lat]);
+          console.warn(`[RoadSnap] ${route.id} — fallback to straight lines:`, err.message);
+          coordinates = stationCoords.map(s => [s.lng, s.lat]);
         }
 
         if (cancelled) return;
@@ -118,14 +117,13 @@ export default function useRoadSnappedRoutes(routes, waypoints) {
       }
 
       if (cancelled) return;
-
       const result = { type: 'FeatureCollection', features };
       writeCache(result);
       setGeoJSON(result);
     })();
 
     return () => { cancelled = true; };
-  }, [routes, waypoints]);
+  }, [routes, stations]);
 
-  return geoJSON; // null while loading (falls back to static lines in LiveMap)
+  return geoJSON; // null while loading
 }

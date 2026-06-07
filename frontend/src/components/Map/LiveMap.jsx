@@ -25,20 +25,26 @@ const INITIAL_VIEW = {
   bearing: 0,
 };
 
-// ── Fallback GeoJSON (straight lines shown while road-snap loads) ──
-function buildFallbackGeoJSON(routes, waypoints) {
+// ── Fallback GeoJSON — straight segments through station positions ──
+// Used while road-snapped geometry is loading (or as permanent fallback).
+// Drawing through stations ensures markers always sit on the line.
+function buildFallbackGeoJSON(routes, stations) {
   return {
     type: 'FeatureCollection',
     features: routes
-      .filter(r => r.active && waypoints[r.id])
-      .map(r => ({
-        type: 'Feature',
-        properties: { color: r.color, name: r.name, id: r.id, phase: r.phase || 1 },
-        geometry: {
-          type: 'LineString',
-          coordinates: waypoints[r.id].map(([lat, lng]) => [lng, lat]),
-        },
-      })),
+      .filter(r => r.active && r.stationIds?.length >= 2)
+      .map(r => {
+        const coords = r.stationIds
+          .map(id => stations.find(s => s.id === id))
+          .filter(Boolean)
+          .map(s => [s.lng, s.lat]);
+        return {
+          type: 'Feature',
+          properties: { color: r.color, name: r.name, id: r.id, phase: r.phase || 1 },
+          geometry: { type: 'LineString', coordinates: coords },
+        };
+      })
+      .filter(f => f.geometry.coordinates.length >= 2),
   };
 }
 
@@ -298,7 +304,6 @@ export default function LiveMap() {
   const buses            = useDartStore(s => s.buses);
   const routes           = useDartStore(s => s.routes);
   const stations         = useDartStore(s => s.stations);
-  const waypoints        = useDartStore(s => s.waypoints);
   const stationArrivals  = useDartStore(s => s.stationArrivals);
   const focusedRouteIds   = useDartStore(s => s.focusedRouteIds);
   const clearFocusedRoute  = useDartStore(s => s.clearFocusedRoute);
@@ -314,9 +319,9 @@ export default function LiveMap() {
   const [followId,  setFollowId]  = useState(null);
   const [showDirections, setShowDirections] = useState(false);
 
-  // Road-snapped routes (Mapbox Directions API, cached 24 h)
-  const snappedGeoJSON  = useRoadSnappedRoutes(routes, waypoints);
-  const fallbackGeoJSON = useMemo(() => buildFallbackGeoJSON(routes, waypoints), [routes, waypoints]);
+  // Road-snapped routes — Directions API through station coords (cached 24 h)
+  const snappedGeoJSON  = useRoadSnappedRoutes(routes, stations);
+  const fallbackGeoJSON = useMemo(() => buildFallbackGeoJSON(routes, stations), [routes, stations]);
   const baseGeoJSON     = snappedGeoJSON ?? fallbackGeoJSON;
 
   // When route(s) are focused, dim everything else
@@ -348,12 +353,18 @@ export default function LiveMap() {
   useEffect(() => {
     if (!focusedRouteIds.length || !mapRef.current) return;
 
-    // Gather waypoints from all focused routes
-    const allPts = focusedRouteIds.flatMap(id => waypoints[id] || []);
-    if (allPts.length < 2) return;
+    // Gather station positions of all focused routes
+    const allStations = focusedRouteIds.flatMap(routeId => {
+      const route = routes.find(r => r.id === routeId);
+      if (!route) return [];
+      return (route.stationIds || [])
+        .map(id => stations.find(s => s.id === id))
+        .filter(Boolean);
+    });
+    if (allStations.length < 2) return;
 
-    const lngs = allPts.map(([, lng]) => lng);
-    const lats = allPts.map(([lat]) => lat);
+    const lngs = allStations.map(s => s.lng);
+    const lats = allStations.map(s => s.lat);
     const minLng = Math.min(...lngs), maxLng = Math.max(...lngs);
     const minLat = Math.min(...lats), maxLat = Math.max(...lats);
 
@@ -363,7 +374,7 @@ export default function LiveMap() {
       { padding: 80, duration: 800, pitch: 0, bearing: 0 }
     );
     setFollowId(null);
-  }, [focusedRouteIds, waypoints]);
+  }, [focusedRouteIds, routes, stations]);
 
   // ── Mapbox Directions control — added once after map loads ────
   const handleMapLoad = useCallback((e) => {
